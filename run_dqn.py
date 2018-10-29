@@ -6,7 +6,17 @@ import tensorflow.contrib.layers as layers
 import itertools
 import random
 from collections import namedtuple
+import cv2
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
+
+
+def _process_frame84(frame):
+    img = np.reshape(frame, [210, 160, 3]).astype(np.float32)
+    img = img[:, :, 0] * 0.299 + img[:, :, 1] * 0.587 + img[:, :, 2] * 0.114
+    resized_screen = cv2.resize(img, (84, 110),  interpolation=cv2.INTER_LINEAR)
+    x_t = resized_screen[18:102, :]
+    x_t = np.reshape(x_t, [84, 84, 1])
+    return x_t.astype(np.uint8)
 
 def initialize_interdependent_variables(session, vars_list, feed_dict):
     """Initialize a list of variables one at a time, which is useful if
@@ -210,6 +220,11 @@ class ReplayBuffer(object):
             Index at which the frame is stored. To be used for `store_effect` later.
         """
         if self.obs is None:
+            print("------")
+            print(frame.shape)
+            print([self.size])
+            print(list(frame.shape))
+            #print([self.size] + list(frame.shape))
             self.obs      = np.empty([self.size] + list(frame.shape), dtype=np.uint8)
             self.action   = np.empty([self.size],                     dtype=np.int32)
             self.reward   = np.empty([self.size],                     dtype=np.float32)
@@ -354,13 +369,13 @@ def main():
 
     # set up placeholders
     # placeholder for current observation (or state)
-    observation_t_placeholder = tf.placeholder(tf.uint8, [None] + list(input_shape))
+    observation_t_placeholder = tf.placeholder(tf.uint8, [None, 84, 84, 4])
     # placeholder for current action
     action_t_placeholder = tf.placeholder(tf.int32, [None])
     # placeholder for t + 1 reward
     reward_tp1_placeholder = tf.placeholder(tf.float32, [None])
     # placeholder for t + 1 observation
-    observation_tp1_placeholder = tf.placeholder(tf.float32, [None] + list(input_shape))
+    observation_tp1_placeholder = tf.placeholder(tf.float32, [None, 84, 84, 4])
 
     # placeholder to indicate end of the episode
     done_indicator_placeholder = tf.placeholder(tf.float32, [None])
@@ -424,7 +439,7 @@ def main():
     mean_episode_reward      = -float('nan')
     best_mean_episode_reward = -float('inf')
     reward_list = []
-    last_obs = env.reset()
+    last_obs = _process_frame84(env.reset())
 
 
     for t in itertools.count():
@@ -443,6 +458,7 @@ def main():
 
         # perform action in env
         new_state, reward, done, info = env.step(action)
+        new_state = _process_frame84(new_state)
         reward_list.append(reward)
         env.render()
 
@@ -451,7 +467,7 @@ def main():
         last_obs = new_state
 
         if done:
-            last_obs = env.reset()
+            last_obs = _process_frame84(env.reset())
             print("total rewrad = %f ; ave reward = %f" %(np.sum(reward_list), np.mean(reward_list)))
             reward_list = []
 
